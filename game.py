@@ -19,19 +19,73 @@ episode_save_interval = 1000
 screen = pygame.display.set_mode((display_width, display_height))
 clock = pygame.time.Clock()
 running = True
-max_steering_nn = 20
 
 nn_steering_angles = [
-    -max_steering_nn,
+    -20,
+    -15,
+    -10,
+    -5,
+    -4,
+    -3,
+    -2,
+    -1,
+    -0.5,
+    -0.25,
     0,
-    max_steering_nn
+    0.25,
+    0.5,
+    1,
+    2,
+    3,
+    4,
+    5,
+    10,
+    15,
+    20,
 ]
 
-SPEED = 5
+SPEED = 8 
 
-neuronal = NeuronalNetwork(3, 8, 3, episode_save_interval)
+debug = False
+
+logging = False
+
+neuronal = NeuronalNetwork(3, 8, 21, episode_save_interval)
 
 episodes = input("Input the episode number of the model to load or press Enter: ")
+
+def call_nn_test(input_vars):
+
+    neurons = neuronal.linear_layer(neuronal.weights_input_hidden, input_vars, neuronal.input_bias)
+    activated_neurons = neuronal.relu(neurons)
+    second_layer = neuronal.linear_layer(neuronal.weights_output_hidden, activated_neurons, neuronal.output_bias)
+
+    softmax = neuronal.softmax(second_layer)
+    option = softmax.index(max(softmax))
+
+    steering = nn_steering_angles[option]
+
+    print("For input: ", end="")
+    [print(str(f) + ", ", end="") for f in input_vars]
+    print("Softmax: ")
+    print(softmax)
+    print(f"choose {steering} out of: ")
+    [print(str(s)) for s in nn_steering_angles]
+    
+
+
+def runDebugMode():
+    NnInput = input("Input your desired coords (distance, cos angle, sin angle): ")
+    try:
+        inputVarsNn =  [int(n.strip()) for n in NnInput.strip().split(",")]
+        inputVarsNn[1] = math.cos(math.radians(inputVarsNn[1]))
+        inputVarsNn[2] = math.sin(math.radians(inputVarsNn[2]))
+        call_nn_test(inputVarsNn)
+
+    except:  # noqa: E722
+        print("wrong input please input 3 values seperated by a comma please only input numbers")
+
+
 if episodes:
     load = f"models\model-{episodes}.json"
     if os.path.exists(load):
@@ -42,13 +96,18 @@ if episodes:
         print("New model with new weights")
 
 while True:
-    fpsCountInput = input("Do you want to run it in trainings-mode (train) or test mode (test): ")
+    fpsCountInput = input("Do you want to run it in trainings-mode (train), test mode (test) or (debug): ")
     if fpsCountInput.lower() == "train":
         fpsCount = 600000
         break
     elif fpsCountInput.lower() == "test":
+        logging = True
         fpsCount = 60
         break
+    elif fpsCountInput.lower() == "debug":
+        debug = True
+        running = False
+        runDebugMode()
     else:
         print("wrong input")
     
@@ -72,6 +131,11 @@ def clear_angle_error(angle):
     # BUT IN PYTHON ANGLE IS ALWAYS RADIANT SO using pi
     return ((angle + math.pi) % (math.pi * 2)) - math.pi
 
+def calcSterringPenalty(sterrings):
+    if len(sterrings) > 5:
+        return 0.22 * abs(sterrings[-1] - sterrings[-2]) / 40 - sterrings[-1] * 0.004
+    return 0
+
 
 def call_nn(goal_x, goal_y):
 
@@ -85,7 +149,9 @@ def call_nn(goal_x, goal_y):
     step_penalty = 0.001
 
     if neuronal.step != 0:
-        neuronal.episode_rewards.append(neuronal.episode_distances[neuronal.step - 1]  - previous_distance - step_penalty)
+        sterring_penalty = calcSterringPenalty(neuronal.episode_actions)
+
+        neuronal.episode_rewards.append(neuronal.episode_distances[neuronal.step - 1]  - previous_distance - step_penalty - sterring_penalty)
 
     neuronal.episode_distances[neuronal.step] = previous_distance
     
@@ -103,6 +169,10 @@ def call_nn(goal_x, goal_y):
     # e.g 190 deg would be -170 and 170 remain 170 that's pretty far away with just looking at
     # a numeric scalar so its easier to use sin and cos so get those angles close together in numbers
     input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error)]
+    # if logging:
+        # print("distance: " + str(input_vars[0]))
+        # print("cos angle: " + str(input_vars[1]))
+        # print("sin angle: " + str(input_vars[2]))
 
 
     # initialing NN
@@ -116,6 +186,8 @@ def call_nn(goal_x, goal_y):
         option = neuronal.choose_option(softmax)
     elif fpsCountInput.lower() == "test":
         option = softmax.index(max(softmax))
+        if logging:
+            print(nn_steering_angles[option])
 
     neuronal.steering = nn_steering_angles[option]
 
@@ -145,7 +217,8 @@ neuronal.randcord_x = random.uniform(700, 900) # 800
 neuronal.randcord_y = random.uniform(100, 500) # 400
 frame_count = -1
 while running:
-    dt = clock.tick(fpsCount) / 1000 # limits FPS to 60
+    clock.tick(fpsCount)
+    dt = 1 / 60
     frame_count += 1
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
@@ -175,7 +248,7 @@ while running:
         frame_count = -1
         continue
 
-    if frame_count % 4 == 0:
+    if frame_count % 7 == 0:
 
         move_result = call_nn(neuronal.randcord_x, neuronal.randcord_y)
         if move_result is None:
@@ -204,7 +277,7 @@ while running:
             frame_count = -1
 
     else:
-        if not car.move(1,neuronal.steering, 60 / 1000):
+        if not car.move(1,neuronal.steering, dt):
             neuronal.episode_rewards.append(-1)
 
             assert (
@@ -217,8 +290,6 @@ while running:
             car.reset_car()
             frame_count = -1
     car.draw()
-
-
 
 #    keys = pygame.key.get_pressed()
 #

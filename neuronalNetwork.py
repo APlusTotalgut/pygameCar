@@ -4,10 +4,12 @@ import json
 
 
 class NeuronalNetwork:
-    def __init__(self, input_count, hidden_count, output_count, episode_save_interval):
+    def __init__(self, input_count, hidden_count, output_count, episode_save_interval, test_mode = False):
         self.input_count = input_count
         self.hidden_count = hidden_count
         self.output_count = output_count
+
+        self.test_mode = test_mode
 
         self.episode_save_interval = episode_save_interval
 
@@ -79,7 +81,7 @@ class NeuronalNetwork:
         for li in soft_list:
             # we can shift the logit because only the difference matters between the values not the absolute value
             shifted_logit = li - max_val
-            exp_vals.append(math.exp(shifted_logit))  # e ^ shifted_logit -> difference between the values bigger
+            exp_vals.append(math.exp(shifted_logit))  # e ^ shifted_logit -> difference between the values bigger (natural logaritmus)
         sum_vals = sum(exp_vals)
         return [e / sum_vals for e in exp_vals]
 
@@ -198,8 +200,9 @@ class NeuronalNetwork:
         self.episode += 1
         print(f"Episode {self.episode}")
         if self.episode % self.episode_save_interval == 0:
-            self.save_model(f"models/model-{self.episode}.json")
-            print("model gespeichert")
+            if not self.test_mode:
+                self.save_model(f"models/model-{self.episode}.json")
+                print("model gespeichert")
 
 
         self.randcord_x = random.uniform(600, 1100) # 800
