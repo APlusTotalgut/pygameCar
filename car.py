@@ -16,6 +16,11 @@ class Car:
         self.start_y = y
         self.steering = 0
         self.initialAngle = 0
+        self.acceleration = 0.3
+        self.target_acceleration = 0
+        self.current_step = 0
+        self.best_distance = 0
+        self.acceleration_change_speed = 40
         self.x = x
         self.y = y
 
@@ -32,9 +37,17 @@ class Car:
         self.screen.blit(rotated, rect)
 
     # for test purposes is acceleration always either -1 for backwards or 1 for forwards
-    def move(self, acceleration, steering, dt):
+    def move(self, steering, dt, target_acceleration = None):
+
+        if (target_acceleration or target_acceleration == 0) and target_acceleration != self.target_acceleration:
+            self.target_acceleration = target_acceleration
+            self.current_step = (self.target_acceleration - self.acceleration) / self.acceleration_change_speed
+
+        if abs(self.target_acceleration - self.acceleration) > 0.001:
+            self.acceleration += self.current_step
+            # print(f"acceleration: {self.acceleration}, {self.target_acceleration}, {self.current_step}")
         wheelbase = 70
-        velocity = self.speed * 60 * acceleration
+        velocity = self.speed * 60 * self.acceleration
         initial_radiant = math.radians(self.initialAngle)
         steering_angle = math.radians(steering)
 

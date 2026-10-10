@@ -19,6 +19,7 @@ episode_save_interval = 1000
 screen = pygame.display.set_mode((display_width, display_height))
 clock = pygame.time.Clock()
 running = True
+render_car = False
 
 nn_steering_angles = [
     -20,
@@ -44,13 +45,19 @@ nn_steering_angles = [
     20,
 ]
 
+nn_acceleration_forces = [
+    1,
+    0,
+    -1
+]
+
 SPEED = 8 
 
 debug = False
 
 logging = False
 
-neuronal = NeuronalNetwork(3, 8, 21, episode_save_interval)
+neuronal = NeuronalNetwork(4, 8, 24, episode_save_interval)
 
 episodes = input("Input the episode number of the model to load or press Enter: ")
 
@@ -60,15 +67,15 @@ def call_nn_test(input_vars):
     activated_neurons = neuronal.relu(neurons)
     second_layer = neuronal.linear_layer(neuronal.weights_output_hidden, activated_neurons, neuronal.output_bias)
 
-    softmax = neuronal.softmax(second_layer)
-    option = softmax.index(max(softmax))
+    steering_softmax = neuronal.softmax(second_layer)
+    option = steering_softmax.index(max(steering_softmax))
 
     steering = nn_steering_angles[option]
 
     print("For input: ", end="")
     [print(str(f) + ", ", end="") for f in input_vars]
     print("Softmax: ")
-    print(softmax)
+    print(steering_softmax)
     print(f"choose {steering} out of: ")
     [print(str(s)) for s in nn_steering_angles]
     
@@ -102,6 +109,7 @@ while True:
         break
     elif fpsCountInput.lower() == "test":
         logging = True
+        render_car = True        
         fpsCount = 60
         break
     elif fpsCountInput.lower() == "debug":
@@ -146,17 +154,24 @@ def call_nn(goal_x, goal_y):
 
     previous_distance = previous_distance / display_width
 
+    best_distance_reward = 0
+    if previous_distance < car.best_distance:
+        best_distance_reward = car.best_distance - previous_distance
+        car.best_distance = previous_distance
+        
     step_penalty = 0.001
 
     if neuronal.step != 0:
-        sterring_penalty = calcSterringPenalty(neuronal.episode_actions)
+        sterring_penalty = calcSterringPenalty(neuronal.episode_actions[0])
 
-        neuronal.episode_rewards.append(neuronal.episode_distances[neuronal.step - 1]  - previous_distance - step_penalty - sterring_penalty)
+        neuronal.episode_rewards.append(neuronal.episode_distances[neuronal.step - 1]  - previous_distance - step_penalty - sterring_penalty + (best_distance_reward * 5))
+
+
 
     neuronal.episode_distances[neuronal.step] = previous_distance
     
 
-    if neuronal.step >= 40:
+    if neuronal.step >= 80:
         neuronal.episode_rewards[-1] -= 0.2
         return 
     angle_to_goal = math.atan2(goal_y - car.y, goal_x - car.x)
@@ -168,7 +183,7 @@ def call_nn(goal_x, goal_y):
     # using sin and cos that the NN understands the numbers better
     # e.g 190 deg would be -170 and 170 remain 170 that's pretty far away with just looking at
     # a numeric scalar so its easier to use sin and cos so get those angles close together in numbers
-    input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error)]
+    input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error), car.acceleration]
     # if logging:
         # print("distance: " + str(input_vars[0]))
         # print("cos angle: " + str(input_vars[1]))
@@ -181,17 +196,21 @@ def call_nn(goal_x, goal_y):
     activated_neurons = neuronal.relu(neurons)
     second_layer = neuronal.linear_layer(neuronal.weights_output_hidden, activated_neurons, neuronal.output_bias)
 
-    softmax = neuronal.softmax(second_layer)
+    steering_softmax = neuronal.softmax(second_layer[:len(nn_steering_angles)])
+    acceleration_softmax = neuronal.softmax(second_layer[len(nn_steering_angles):len(nn_steering_angles) + len(nn_acceleration_forces)])
     if fpsCountInput.lower() == "train":
-        option = neuronal.choose_option(softmax)
+        option = neuronal.choose_option(steering_softmax)
+        acceleration = neuronal.choose_option(acceleration_softmax)
     elif fpsCountInput.lower() == "test":
-        option = softmax.index(max(softmax))
-        if logging:
-            print(nn_steering_angles[option])
+        render_car = True  # noqa: F841
+        option = steering_softmax.index(max(steering_softmax))
+        acceleration = acceleration_softmax.index(max(acceleration_softmax))
+        # if logging:
+            # print(nn_steering_angles[option])
 
     neuronal.steering = nn_steering_angles[option]
 
-    car_move_valid = car.move(1, neuronal.steering, dt)
+    car_move_valid = car.move(neuronal.steering, dt, nn_acceleration_forces[acceleration])
         
     state = input_vars
 
@@ -200,12 +219,12 @@ def call_nn(goal_x, goal_y):
         "hidden_z" : neurons,
         "hidden_activations" : activated_neurons,
         "output_layer" : second_layer,
-        "probabilities" : softmax
+        "probabilities" : [steering_softmax, acceleration_softmax]
     }
 
     neuronal.episode_cache.append(cache)
 
-    neuronal.episode_actions.append(option)
+    neuronal.episode_actions.append([option, acceleration])
 
     neuronal.step += 1
 
@@ -215,6 +234,12 @@ def call_nn(goal_x, goal_y):
 # randcord_x, randcord_y = get_goal_cords()
 neuronal.randcord_x = random.uniform(700, 900) # 800
 neuronal.randcord_y = random.uniform(100, 500) # 400
+
+car.best_distance = math.hypot(
+    neuronal.randcord_x - car.x,
+    neuronal.randcord_y - car.y
+)
+
 frame_count = -1
 while running:
     clock.tick(fpsCount)
@@ -227,17 +252,18 @@ while running:
             running = False
 
 
-    # fill the screen with a color to wipe away anything from last frame
-    screen.fill("grey")
+    if render_car:
+        screen.fill("grey")
+        pygame.draw.arc(screen, 'green', (neuronal.randcord_x, neuronal.randcord_y, 40, 40), 0, 2 * math.pi, 10)
 
     # RENDER YOUR GAME HERE
     #print(randcord_x, randcord_y)
-    pygame.draw.arc(screen, 'green', (neuronal.randcord_x, neuronal.randcord_y, 40, 40), 0, 2 * math.pi, 10)
 
 
-    if abs(car.x - neuronal.randcord_x) < 30 and abs(car.y - neuronal.randcord_y) < 30:
+    if abs(car.x - neuronal.randcord_x) < 30 and abs(car.y - neuronal.randcord_y) < 30 and (car.acceleration <= 0.05 and car.acceleration >= -0.05):
 
         neuronal.episode_rewards.append(1)
+
         assert (
             len(neuronal.episode_cache)
             == len(neuronal.episode_actions)
@@ -277,7 +303,7 @@ while running:
             frame_count = -1
 
     else:
-        if not car.move(1,neuronal.steering, dt):
+        if not car.move(neuronal.steering, dt):
             neuronal.episode_rewards.append(-1)
 
             assert (
@@ -289,8 +315,10 @@ while running:
             neuronal.stop_episode()
             car.reset_car()
             frame_count = -1
-    car.draw()
 
+    if render_car:
+        car.draw()
+        pygame.display.flip()
 #    keys = pygame.key.get_pressed()
 #
 #    if keys[pygame.K_w]:
@@ -305,7 +333,6 @@ while running:
 
     # flip() the display to put your work on screen
 
-    pygame.display.flip()
 
 
 pygame.quit()

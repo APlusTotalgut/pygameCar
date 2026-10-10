@@ -108,15 +108,36 @@ class NeuronalNetwork:
         # print(la,lc,lr)
         episode_output_delta = []
         for i in range(len(self.episode_actions)):
-            action = self.episode_actions[i]
+            steering_action = self.episode_actions[i][0]
+            acceleration_action = self.episode_actions[i][1]
             episode_return = returns[i]
-            probs = self.episode_cache[i]['probabilities']
-            output_deltas = []
-            for k, p in enumerate(probs):
+            steering_probs = self.episode_cache[i]['probabilities'][0]
+            acceleration_probs = self.episode_cache[i]['probabilities'][1]
+            # print("acceratiuon probs")
+            # print(len(acceleration_probs))
+
+            acceleration_deltas = []
+
+            steering_deltas = []
+
+            for k, p in enumerate(steering_probs):
                 # p - k == action esantially means if the prediction was low and it came out true and the return was postive it will return a high negativ number (what increases the weights)
                 # if p is high and k came out true than the increase will be less because the weight is already really likely and must not be increased drasticly
-                output_deltas.append(episode_return * (p - (k == action)))
-            episode_output_delta.append(output_deltas)
+                steering_deltas.append(episode_return * (p - (k == steering_action)))
+
+
+            for k, p in enumerate(acceleration_probs):
+                # p - k == action esantially means if the prediction was low and it came out true and the return was postive it will return a high negativ number (what increases the weights)
+                # if p is high and k came out true than the increase will be less because the weight is already really likely and must not be increased drasticly
+                acceleration_deltas.append(episode_return * (p - (k == acceleration_action)))
+                # print("appending in acceration props run")
+                # print(acceleration_deltas)
+
+            deltas = steering_deltas + acceleration_deltas 
+            # print("len of steerin delta")
+            # print(len(steering_deltas))
+            # print(len(acceleration_deltas))        
+            episode_output_delta.append(deltas)
         #print("episode")
         #print(episode_output_delta)
         #print("end episode")
@@ -271,8 +292,8 @@ class NeuronalNetwork:
         for i in range(len(self.episode_actions)):
 
             hidden_activations = self.episode_cache[i]['hidden_activations']
-
             for k in range(len(grad_weights_hidden_output)):
+                # print(k)
                 output_delta = episode_output_delta[i][k]
 
                 for j in range(len(grad_weights_hidden_output[k])):
