@@ -183,7 +183,7 @@ def call_nn(goal_x, goal_y):
     # using sin and cos that the NN understands the numbers better
     # e.g 190 deg would be -170 and 170 remain 170 that's pretty far away with just looking at
     # a numeric scalar so its easier to use sin and cos so get those angles close together in numbers
-    input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error), car.acceleration]
+    input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error), car.acceleration, car.steering]
     # if logging:
         # print("distance: " + str(input_vars[0]))
         # print("cos angle: " + str(input_vars[1]))

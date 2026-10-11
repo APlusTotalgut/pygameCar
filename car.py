@@ -14,12 +14,21 @@ class Car:
         self.ww = window_width
         self.start_x = x
         self.start_y = y
+
+
         self.steering = 0
+        self.steering_target = 0
+        self.current_steering_step = 0
+        self.steering_change_speed = 30
+
         self.initialAngle = 0
+
         self.acceleration = 0.3
         self.target_acceleration = 0
         self.current_step = 0
+
         self.best_distance = 0
+
         self.acceleration_change_speed = 40
         self.x = x
         self.y = y
@@ -46,6 +55,14 @@ class Car:
         if abs(self.target_acceleration - self.acceleration) > 0.001:
             self.acceleration += self.current_step
             # print(f"acceleration: {self.acceleration}, {self.target_acceleration}, {self.current_step}")
+
+        if steering != self.steering_target:
+            self.steering_target = steering
+            self.current_steering_step = (self.steering_target - self.steering) / self.steering_change_speed
+
+        if abs(self.steering_target - self.steering) > 0.001:
+            self.steering += self.current_steering_step # stopped at 10k turnes
+
         wheelbase = 70
         velocity = self.speed * 60 * self.acceleration
         initial_radiant = math.radians(self.initialAngle)
