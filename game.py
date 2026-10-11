@@ -4,6 +4,7 @@ import pygame
 from car import Car
 import random
 from neuronalNetwork import NeuronalNetwork
+from pathlib import Path
 # pygame setup
 pygame.init()
 
@@ -94,8 +95,8 @@ def runDebugMode():
 
 
 if episodes:
-    load = f"models\model-{episodes}.json"
-    if os.path.exists(load):
+    load = Path(__file__).resolve().parent / "models" / f"model-{episodes}.json"
+    if load.exists():
         neuronal.load_model(load)
         print("Saved model will be loaded")
         neuronal.episode = int(episodes) + 1
