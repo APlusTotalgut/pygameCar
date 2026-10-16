@@ -50,10 +50,14 @@ class Car:
 
         if (target_acceleration or target_acceleration == 0) and target_acceleration != self.target_acceleration:
             self.target_acceleration = target_acceleration
-            self.current_step = (self.target_acceleration - self.acceleration) / self.acceleration_change_speed
-
+        self.max_step = dt * self.acceleration_change_speed
         if abs(self.target_acceleration - self.acceleration) > 0.001:
-            self.acceleration += self.current_step
+
+            # the outer max is for when the difference is negative because in the min brackets the change will always be returned because the max step
+            # is always positive. For the outer shell the biggest value will be returned which is the negative max step until the difference is smaller
+            # but because it is negative it will be bigger. So the difference will be returned then
+            self.acceleration += max(-self.max_step, 
+                                    min(self.max_step, (self.target_acceleration - self.acceleration)))
             # print(f"acceleration: {self.acceleration}, {self.target_acceleration}, {self.current_step}")
 
         if steering != self.steering_target:

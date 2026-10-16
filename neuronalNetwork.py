@@ -4,12 +4,18 @@ import json
 
 
 class NeuronalNetwork:
-    def __init__(self, input_count, hidden_count, output_count, episode_save_interval, test_mode = False):
+    def __init__(self, input_count, hidden_count, output_count, episode_save_interval, performanceMeasurement, test_mode = False):
         self.input_count = input_count
         self.hidden_count = hidden_count
         self.output_count = output_count
 
+        self.performanceMeasurement = performanceMeasurement
+
         self.test_mode = test_mode
+
+        self.running = True
+
+        self.measuring_peformance = False
 
         self.episode_save_interval = episode_save_interval
 
@@ -219,11 +225,14 @@ class NeuronalNetwork:
         self.episode_distances.clear()
         self.steering = 0
         self.episode += 1
-        print(f"Episode {self.episode}")
+        if not self.measuring_peformance:
+            print(f"Episode {self.episode}")
+        
         if self.episode % self.episode_save_interval == 0:
             if not self.test_mode:
                 self.save_model(f"models/model-{self.episode}.json")
-                print("model gespeichert")
+                if not self.measuring_peformance:
+                    print("model saved")
 
 
         self.randcord_x = random.uniform(600, 1100) # 800

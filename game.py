@@ -4,7 +4,12 @@ import pygame
 from car import Car
 import random
 from neuronalNetwork import NeuronalNetwork
+import time
 from pathlib import Path
+import threading
+from cliInterface import CliInterface
+
+from performanceMeasurement import PerformanceMeasurement
 # pygame setup
 pygame.init()
 
@@ -15,11 +20,14 @@ car_start_x = 50
 car_start_y = 400 # 100
 
 fpsCount = 60
-episode_save_interval = 1000
+episode_save_interval = 40000
+
+max_allowed_steps = 60
+
+measuring_peformance = False
 
 screen = pygame.display.set_mode((display_width, display_height))
 clock = pygame.time.Clock()
-running = True
 render_car = False
 
 nn_steering_angles = [
@@ -58,7 +66,8 @@ debug = False
 
 logging = False
 
-neuronal = NeuronalNetwork(4, 8, 24, episode_save_interval)
+measurement = PerformanceMeasurement()
+neuronal = NeuronalNetwork(4, 8, 24, episode_save_interval, measurement)
 
 episodes = input("Input the episode number of the model to load or press Enter: ")
 
@@ -100,11 +109,12 @@ if episodes:
         neuronal.load_model(load)
         print("Saved model will be loaded")
         neuronal.episode = int(episodes) + 1
+        measurement.starting_episode = neuronal.episode
     else:
         print("New model with new weights")
 
 while True:
-    fpsCountInput = input("Do you want to run it in trainings-mode (train), test mode (test) or (debug): ")
+    fpsCountInput = input("Do you want to run it in trainings-mode (train), test mode (test), (debug), or accuracy measuring mode (amm): ")
     if fpsCountInput.lower() == "train":
         fpsCount = 600000
         break
@@ -115,8 +125,13 @@ while True:
         break
     elif fpsCountInput.lower() == "debug":
         debug = True
-        running = False
+        neuronal.running = False
         runDebugMode()
+    elif fpsCountInput.lower() == "amm":
+        fpsCount = 600000
+        measuring_peformance = True
+        neuronal.measuring_peformance = True
+        break
     else:
         print("wrong input")
     
@@ -146,7 +161,7 @@ def calcSterringPenalty(sterrings):
     return 0
 
 
-def call_nn(goal_x, goal_y):
+def call_nn(goal_x, goal_y, dt):
 
     previous_distance = math.hypot(
         goal_x - car.x,
@@ -172,7 +187,7 @@ def call_nn(goal_x, goal_y):
     neuronal.episode_distances[neuronal.step] = previous_distance
     
 
-    if neuronal.step >= 80:
+    if neuronal.step >= max_allowed_steps:
         neuronal.episode_rewards[-1] -= 0.2
         return 
     angle_to_goal = math.atan2(goal_y - car.y, goal_x - car.x)
@@ -199,7 +214,7 @@ def call_nn(goal_x, goal_y):
 
     steering_softmax = neuronal.softmax(second_layer[:len(nn_steering_angles)])
     acceleration_softmax = neuronal.softmax(second_layer[len(nn_steering_angles):len(nn_steering_angles) + len(nn_acceleration_forces)])
-    if fpsCountInput.lower() == "train":
+    if fpsCountInput.lower() == "train" or fpsCountInput.lower() == "amm":
         option = neuronal.choose_option(steering_softmax)
         acceleration = neuronal.choose_option(acceleration_softmax)
     elif fpsCountInput.lower() == "test":
@@ -241,85 +256,108 @@ car.best_distance = math.hypot(
     neuronal.randcord_y - car.y
 )
 
-frame_count = -1
-while running:
-    clock.tick(fpsCount)
-    dt = 1 / 60
-    frame_count += 1
-    # poll for events
-    # pygame.QUIT event means the user clicked X to close your window
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
 
 
-    if render_car:
-        screen.fill("grey")
-        pygame.draw.arc(screen, 'green', (neuronal.randcord_x, neuronal.randcord_y, 40, 40), 0, 2 * math.pi, 10)
+def main(stop_event):
+    frame_count = -1
 
-    # RENDER YOUR GAME HERE
-    #print(randcord_x, randcord_y)
+    while neuronal.running:
+        if stop_event.is_set():
+            neuronal.running = False
+            break 
+        clock.tick(fpsCount)
+        dt = 1 / 60
+        frame_count += 1
+        # poll for events
+        # pygame.QUIT event means the user clicked X to close your window
+        if render_car:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    neuronal.running = False
 
 
-    if abs(car.x - neuronal.randcord_x) < 30 and abs(car.y - neuronal.randcord_y) < 30 and (car.acceleration <= 0.05 and car.acceleration >= -0.05):
+        if render_car:
+            screen.fill("grey")
+            pygame.draw.arc(screen, 'green', (neuronal.randcord_x, neuronal.randcord_y, 40, 40), 0, 2 * math.pi, 10)
 
-        neuronal.episode_rewards.append(1)
+        #print(randcord_x, randcord_y)
 
-        assert (
-            len(neuronal.episode_cache)
-            == len(neuronal.episode_actions)
-            == len(neuronal.episode_rewards)
-        )
-        neuronal.stop_episode()
-        car.reset_car()
-        frame_count = -1
-        continue
 
-    if frame_count % 7 == 0:
+        if abs(car.x - neuronal.randcord_x) < 30 and abs(car.y - neuronal.randcord_y) < 30 and (car.acceleration <= 0.05 and car.acceleration >= -0.05):
 
-        move_result = call_nn(neuronal.randcord_x, neuronal.randcord_y)
-        if move_result is None:
+            neuronal.episode_rewards.append(1)
+            measurement.addTurn(neuronal.episode)
             assert (
                 len(neuronal.episode_cache)
                 == len(neuronal.episode_actions)
                 == len(neuronal.episode_rewards)
             )
-
+            if logging:
+                time.sleep(2)
             neuronal.stop_episode()
             car.reset_car()
             frame_count = -1
+            continue
 
-        elif move_result is False:
+        if frame_count % 7 == 0:
 
-            neuronal.episode_rewards.append(-1)
+            move_result = call_nn(neuronal.randcord_x, neuronal.randcord_y, dt)
+            if move_result is None:
+                assert (
+                    len(neuronal.episode_cache)
+                    == len(neuronal.episode_actions)
+                    == len(neuronal.episode_rewards)
+                )
 
-            assert (
-                len(neuronal.episode_cache)
-                == len(neuronal.episode_actions)
-                == len(neuronal.episode_rewards)
-            )
+                neuronal.stop_episode()
+                car.reset_car()
+                frame_count = -1
 
-            neuronal.stop_episode()
-            car.reset_car()
-            frame_count = -1
+            elif move_result is False:
 
-    else:
-        if not car.move(neuronal.steering, dt):
-            neuronal.episode_rewards.append(-1)
+                neuronal.episode_rewards.append(-1)
 
-            assert (
-                len(neuronal.episode_cache)
-                == len(neuronal.episode_actions)
-                == len(neuronal.episode_rewards)
-            )
+                assert (
+                    len(neuronal.episode_cache)
+                    == len(neuronal.episode_actions)
+                    == len(neuronal.episode_rewards)
+                )
 
-            neuronal.stop_episode()
-            car.reset_car()
-            frame_count = -1
+                neuronal.stop_episode()
+                car.reset_car()
+                frame_count = -1
 
-    if render_car:
-        car.draw()
-        pygame.display.flip()
+        else:
+            if not car.move(neuronal.steering, dt):
+                neuronal.episode_rewards.append(-1)
+
+                assert (
+                    len(neuronal.episode_cache)
+                    == len(neuronal.episode_actions)
+                    == len(neuronal.episode_rewards)
+                )
+
+                neuronal.stop_episode()
+                car.reset_car()
+                frame_count = -1
+
+        if render_car:
+            car.draw()
+            pygame.display.flip()
+
+stop_event = threading.Event()
+
+main_thread = threading.Thread(target=main, args=(stop_event,))
+
+main_thread.start()
+
+if measuring_peformance:
+    cli = CliInterface(measurement, neuronal)
+    cli.display()
+
+stop_event.set()
+
+
 #    keys = pygame.key.get_pressed()
 #
 #    if keys[pygame.K_w]:
@@ -333,7 +371,6 @@ while running:
 
 
     # flip() the display to put your work on screen
-
 
 
 pygame.quit()
