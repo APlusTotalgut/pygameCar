@@ -35,6 +35,8 @@ class NeuronalNetwork:
 
         self.episode = 0
 
+        self.decision_freq = 3
+
         self.episode_cache = []
         self.episode_actions = []
         self.episode_rewards = []
@@ -237,6 +239,8 @@ class NeuronalNetwork:
 
         self.randcord_x = random.uniform(600, 1100) # 800
         self.randcord_y = random.uniform(50, 640) # 400
+
+
         
 
         # self.randcord_x = random.uniform(600, 900) # 800

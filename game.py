@@ -20,9 +20,9 @@ car_start_x = 50
 car_start_y = 400 # 100
 
 fpsCount = 60
-episode_save_interval = 40000
+episode_save_interval = 10000
 
-max_allowed_steps = 60
+max_allowed_steps = 150
 
 measuring_peformance = False
 
@@ -67,7 +67,7 @@ debug = False
 logging = False
 
 measurement = PerformanceMeasurement()
-neuronal = NeuronalNetwork(4, 8, 24, episode_save_interval, measurement)
+neuronal = NeuronalNetwork(5, 8, 24, episode_save_interval, measurement)
 
 episodes = input("Input the episode number of the model to load or press Enter: ")
 
@@ -136,7 +136,7 @@ while True:
         print("wrong input")
     
 
-car = Car(pygame, screen, car_start_x, car_start_y, SPEED)
+car = Car(pygame, screen, car_start_x, car_start_y, SPEED, neuronal)
 
 def get_goal_cords():
     threshold_x = 450
@@ -157,7 +157,7 @@ def clear_angle_error(angle):
 
 def calcSterringPenalty(sterrings):
     if len(sterrings) > 5:
-        return 0.22 * abs(sterrings[-1] - sterrings[-2]) / 40 - sterrings[-1] * 0.004
+        return 0.0002 * abs(nn_steering_angles[sterrings[-1][0]] - nn_steering_angles[sterrings[-2][0]]) / 40 + abs(nn_steering_angles[sterrings[-1][0]]) * 0.00005
     return 0
 
 
@@ -178,9 +178,9 @@ def call_nn(goal_x, goal_y, dt):
     step_penalty = 0.001
 
     if neuronal.step != 0:
-        sterring_penalty = calcSterringPenalty(neuronal.episode_actions[0])
-
-        neuronal.episode_rewards.append(neuronal.episode_distances[neuronal.step - 1]  - previous_distance - step_penalty - sterring_penalty + (best_distance_reward * 5))
+        steering_penalty = calcSterringPenalty(neuronal.episode_actions)
+        #steering_penalty = 0
+        neuronal.episode_rewards.append(neuronal.episode_distances[neuronal.step - 1]  - previous_distance - step_penalty - steering_penalty + (best_distance_reward * 0.12))
 
 
 
@@ -199,7 +199,7 @@ def call_nn(goal_x, goal_y, dt):
     # using sin and cos that the NN understands the numbers better
     # e.g 190 deg would be -170 and 170 remain 170 that's pretty far away with just looking at
     # a numeric scalar so its easier to use sin and cos so get those angles close together in numbers
-    input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error), car.acceleration, car.steering]
+    input_vars = [previous_distance, math.cos(angle_error), math.sin(angle_error), car.acceleration, (car.steering / 20)]
     # if logging:
         # print("distance: " + str(input_vars[0]))
         # print("cos angle: " + str(input_vars[1]))
@@ -258,11 +258,12 @@ car.best_distance = math.hypot(
 
 
 
-def main(stop_event):
+def main(stop_event = None):
     frame_count = -1
+    count_in_goal = 0
 
     while neuronal.running:
-        if stop_event.is_set():
+        if stop_event and stop_event.is_set():
             neuronal.running = False
             break 
         clock.tick(fpsCount)
@@ -283,23 +284,33 @@ def main(stop_event):
         #print(randcord_x, randcord_y)
 
 
-        if abs(car.x - neuronal.randcord_x) < 30 and abs(car.y - neuronal.randcord_y) < 30 and (car.acceleration <= 0.05 and car.acceleration >= -0.05):
+        if abs(car.x - neuronal.randcord_x) < 10 and abs(car.y - neuronal.randcord_y) < 10:
+            if abs(car.acceleration) < 0.0005:
+                count_in_goal += 1
+            else:
+                count_in_goal = 0
+            if count_in_goal >= 10:
 
-            neuronal.episode_rewards.append(1)
-            measurement.addTurn(neuronal.episode)
-            assert (
-                len(neuronal.episode_cache)
-                == len(neuronal.episode_actions)
-                == len(neuronal.episode_rewards)
-            )
-            if logging:
-                time.sleep(2)
-            neuronal.stop_episode()
-            car.reset_car()
-            frame_count = -1
-            continue
+                count_in_goal = 0
 
-        if frame_count % 7 == 0:
+                neuronal.episode_rewards.append(1.6)
+                measurement.addTurn(neuronal.episode)
+                assert (
+                    len(neuronal.episode_cache)
+                    == len(neuronal.episode_actions)
+                    == len(neuronal.episode_rewards)
+                )
+                if logging:
+                    time.sleep(2)
+                neuronal.stop_episode()
+                car.reset_car()
+                frame_count = -1
+                continue
+        else:
+            count_in_goal = 0
+
+
+        if frame_count % neuronal.decision_freq == 0:
 
             move_result = call_nn(neuronal.randcord_x, neuronal.randcord_y, dt)
             if move_result is None:
@@ -345,17 +356,23 @@ def main(stop_event):
             car.draw()
             pygame.display.flip()
 
-stop_event = threading.Event()
 
-main_thread = threading.Thread(target=main, args=(stop_event,))
-
-main_thread.start()
 
 if measuring_peformance:
+    stop_event = threading.Event()
+
+    main_thread = threading.Thread(target=main, args=(stop_event,))
+    
+    main_thread.start()
+
     cli = CliInterface(measurement, neuronal)
     cli.display()
 
-stop_event.set()
+    stop_event.set()
+else:
+    main()
+
+
 
 
 #    keys = pygame.key.get_pressed()
